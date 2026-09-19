@@ -75,3 +75,68 @@ func (h *CadastralHandler) ApplyConflictSuggestion(c *gin.Context) {
 	}
 	ok(c, http.StatusCreated, item, nil)
 }
+
+func (h *CadastralHandler) CreateResolutionBatch(c *gin.Context) {
+	var req dto.CreateResolutionBatchRequest
+	if !bind(c, h.validate, &req) {
+		return
+	}
+	view, err := h.service.CreateResolutionBatch(req, actor(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusCreated, view, nil)
+}
+
+func (h *CadastralHandler) SubmitResolutionBatch(c *gin.Context) {
+	id, valid := idParam(c)
+	if !valid {
+		return
+	}
+	var req dto.SubmitResolutionBatchRequest
+	if !bind(c, h.validate, &req) {
+		return
+	}
+	view, err := h.service.SubmitResolutionBatch(id, req, c.GetHeader("Idempotency-Key"), actor(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusOK, view, nil)
+}
+
+func (h *CadastralHandler) GetResolutionBatch(c *gin.Context) {
+	id, valid := idParam(c)
+	if !valid {
+		return
+	}
+	view, err := h.service.GetResolutionBatch(id)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusOK, view, nil)
+}
+
+func (h *CadastralHandler) ListResolutionBatches(c *gin.Context) {
+	views, err := h.service.ListResolutionBatches(queryUint(c, "parcel_id"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusOK, views, nil)
+}
+
+func (h *CadastralHandler) CancelResolutionBatch(c *gin.Context) {
+	id, valid := idParam(c)
+	if !valid {
+		return
+	}
+	view, err := h.service.CancelResolutionBatch(id, actor(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusOK, view, nil)
+}

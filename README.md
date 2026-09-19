@@ -80,6 +80,11 @@ All endpoints below except login and health checks require `Authorization: Beare
 | `POST` | `/conflicts/detect` | Run detection; requires an `Idempotency-Key` header |
 | `POST` | `/conflicts/:id/transition` | Confirm, mark false positive, propose resolution, or close a conflict |
 | `POST` | `/conflicts/:id/apply-suggestion` | Create a new draft proposal from the reviewed suggestion and resolve the source conflict |
+| `GET` | `/resolution-batches` | List reviewer disposition batches, optionally filtered by `parcel_id` |
+| `POST` | `/resolution-batches` | Freeze multiple confirmed conflicts of one parcel into a preview batch |
+| `GET` | `/resolution-batches/:id` | Read a batch back with submittable state and per-line invalidation reasons |
+| `POST` | `/resolution-batches/:id/submit` | All-or-nothing batch submission; requires an `Idempotency-Key` header |
+| `POST` | `/resolution-batches/:id/cancel` | Discard a preview batch without touching conflicts or proposals |
 | `GET` | `/audit` | Read immutable audit events |
 
 `/healthz` is liveness; `/readyz` verifies database readiness.
@@ -101,6 +106,8 @@ The frontend sends every request through `/api/v1`. `parcel_ids` is persisted by
 The independent Gin middleware files are `request_id.go`, `recovery.go`, `auth.go`, `rbac.go`, `audit.go`, and `error_handler.go`. They establish request correlation and audit context before authentication, enforce authorization and rate limits, recover panics, and retain a uniform JSON fallback for recorded Gin errors.
 
 Allowed proposal flow is `draft -> validated -> submitted -> reviewed -> accepted/rejected`, with `reviewed -> revision -> draft`. Illegal transitions return `409`; an author cannot review their own proposal. Conflict flow is `detected -> confirmed -> resolution_proposed -> resolved -> closed`, with the alternate `detected -> false_positive -> closed` path. Applying a reviewed suggestion creates a new draft proposal version and resolves the source conflict; it does not rewrite the original proposal or parcel boundary.
+
+Batch disposition lets a reviewer select multiple **confirmed** conflicts of one parcel on `/conflicts`. Creating a batch freezes every line's parcel `boundary_version` and a SHA-256 hash of its suggested geometry into a `preview` batch. Submission re-validates every line first: if any conflict was already handled, the parcel boundary version changed, the suggestion hash drifted, or another still-open batch already claims that conflict, the entire submission returns `409` with per-conflict `details` reasons (`conflict_processed`, `parcel_version_changed`, `suggestion_changed`, `covered_by_open_batch`) and no conflict, proposal, or counter changes. Only when every line is still valid does one transaction create one `draft` proposal per conflict and advance each conflict `confirmed -> resolution_proposed -> resolved`. Batch state is `preview | submitted | cancelled` (`backend/internal/constants/conflict_type.go`, mirrored in `frontend/src/types/resolution-batch.ts`); cancelling a preview releases its claim. Submission requires `Idempotency-Key` (1-128 characters): replaying the same actor/key/request returns the original batch, while reusing the key with a different rationale returns `409`. The batch read endpoint always reports `submittable`, an aggregate `invalid_reason`, and per-line reasons, so a page refresh reads back the same state. Only `reviewer` and `admin` may manage batches.
 
 ## Coordinates And Legal Boundary
 
