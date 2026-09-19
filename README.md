@@ -80,6 +80,9 @@ All endpoints below except login and health checks require `Authorization: Beare
 | `POST` | `/conflicts/detect` | Run detection; requires an `Idempotency-Key` header |
 | `POST` | `/conflicts/:id/transition` | Confirm, mark false positive, propose resolution, or close a conflict |
 | `POST` | `/conflicts/:id/apply-suggestion` | Create a new draft proposal from the reviewed suggestion and resolve the source conflict |
+| `POST` | `/conflicts/batches/preview` | Freeze parcel versions and suggestion hashes of same-parcel confirmed conflicts into a batch; requires an `Idempotency-Key` header |
+| `POST` | `/conflicts/batches/:id/submit` | Validate the frozen inputs, then create draft proposals and resolve the conflicts in one transaction, or fail the whole batch untouched |
+| `GET` | `/conflicts/batches`, `/conflicts/batches/:id` | Read batch state, live submittable evaluation, and stored invalidation reasons |
 | `GET` | `/audit` | Read immutable audit events |
 
 `/healthz` is liveness; `/readyz` verifies database readiness.
@@ -101,6 +104,8 @@ The frontend sends every request through `/api/v1`. `parcel_ids` is persisted by
 The independent Gin middleware files are `request_id.go`, `recovery.go`, `auth.go`, `rbac.go`, `audit.go`, and `error_handler.go`. They establish request correlation and audit context before authentication, enforce authorization and rate limits, recover panics, and retain a uniform JSON fallback for recorded Gin errors.
 
 Allowed proposal flow is `draft -> validated -> submitted -> reviewed -> accepted/rejected`, with `reviewed -> revision -> draft`. Illegal transitions return `409`; an author cannot review their own proposal. Conflict flow is `detected -> confirmed -> resolution_proposed -> resolved -> closed`, with the alternate `detected -> false_positive -> closed` path. Applying a reviewed suggestion creates a new draft proposal version and resolves the source conflict; it does not rewrite the original proposal or parcel boundary.
+
+Batch disposition lets a reviewer select several `confirmed` conflicts of one parcel. The preview freezes every participating parcel version and each suggestion hash into a `previewed` batch. Submit re-validates the frozen inputs: if any conflict was processed, any parcel version moved, or another unfinished batch covers one of the conflicts, the whole batch is marked `failed` and conflicts, proposals, and their counts stay untouched; otherwise one draft proposal per conflict is created and every conflict advances to `resolved` inside a single transaction. Replaying the preview `Idempotency-Key` returns the original batch, reusing the key with a different conflict set returns `409`, and re-submitting a completed batch returns it unchanged.
 
 ## Coordinates And Legal Boundary
 

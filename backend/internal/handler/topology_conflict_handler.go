@@ -75,3 +75,51 @@ func (h *CadastralHandler) ApplyConflictSuggestion(c *gin.Context) {
 	}
 	ok(c, http.StatusCreated, item, nil)
 }
+
+func (h *CadastralHandler) PreviewConflictBatch(c *gin.Context) {
+	var req dto.ConflictBatchPreviewRequest
+	if !bind(c, h.validate, &req) {
+		return
+	}
+	view, err := h.service.PreviewConflictBatch(req, c.GetHeader("Idempotency-Key"), actor(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusCreated, view, nil)
+}
+
+func (h *CadastralHandler) SubmitConflictBatch(c *gin.Context) {
+	id, valid := idParam(c)
+	if !valid {
+		return
+	}
+	view, err := h.service.SubmitConflictBatch(id, actor(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusOK, view, nil)
+}
+
+func (h *CadastralHandler) GetConflictBatch(c *gin.Context) {
+	id, valid := idParam(c)
+	if !valid {
+		return
+	}
+	view, err := h.service.GetConflictBatch(id)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusOK, view, nil)
+}
+
+func (h *CadastralHandler) ListConflictBatches(c *gin.Context) {
+	items, meta, err := h.service.ListConflictBatches(dto.ConflictBatchQuery{ParcelID: queryUint(c, "parcel_id"), State: c.Query("state"), Page: queryInt(c, "page", 1), PageSize: queryInt(c, "page_size", 20)})
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusOK, items, meta)
+}

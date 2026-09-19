@@ -3,7 +3,9 @@ package repository
 import (
 	"errors"
 	"fmt"
+	"time"
 
+	"cadastral-boundary-topology-resolution/backend/internal/constants"
 	"cadastral-boundary-topology-resolution/backend/internal/dto"
 	"cadastral-boundary-topology-resolution/backend/internal/model"
 	"gorm.io/gorm"
@@ -107,6 +109,126 @@ func (r *TopologyDetectionRunRepository) GetByActorKey(actorID uint, key string)
 func (r *TopologyDetectionRunRepository) Create(item *model.TopologyDetectionRun) error {
 	if err := r.db.Create(item).Error; err != nil {
 		return fmt.Errorf("create topology detection run: %w", err)
+	}
+	return nil
+}
+
+// ConflictResolutionBatchRepository stores disposition batches and their
+// frozen items. Batches bind an actor and Idempotency-Key to one preview.
+type ConflictResolutionBatchRepository struct{ db *gorm.DB }
+
+func (r *ConflictResolutionBatchRepository) Create(batch *model.ConflictResolutionBatch, items *[]model.ConflictResolutionBatchItem) error {
+	if err := r.db.Create(batch).Error; err != nil {
+		return fmt.Errorf("create conflict resolution batch: %w", err)
+	}
+	for index := range *items {
+		(*items)[index].BatchID = batch.ID
+	}
+	if err := r.db.Create(items).Error; err != nil {
+		return fmt.Errorf("create conflict resolution batch items: %w", err)
+	}
+	return nil
+}
+
+func (r *ConflictResolutionBatchRepository) Get(id uint) (model.ConflictResolutionBatch, error) {
+	var item model.ConflictResolutionBatch
+	if err := r.db.First(&item, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return item, ErrNotFound
+		}
+		return item, fmt.Errorf("get conflict resolution batch: %w", err)
+	}
+	return item, nil
+}
+
+func (r *ConflictResolutionBatchRepository) GetByActorKey(actorID uint, key string) (model.ConflictResolutionBatch, error) {
+	var item model.ConflictResolutionBatch
+	if err := r.db.Where("actor_id = ? AND idempotency_key = ?", actorID, key).First(&item).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return item, ErrNotFound
+		}
+		return item, fmt.Errorf("find conflict batch idempotency key: %w", err)
+	}
+	return item, nil
+}
+
+func (r *ConflictResolutionBatchRepository) List(q dto.ConflictBatchQuery) ([]model.ConflictResolutionBatch, int64, error) {
+	db := r.db.Model(&model.ConflictResolutionBatch{})
+	if q.ParcelID != nil {
+		db = db.Where("parcel_id = ?", *q.ParcelID)
+	}
+	if q.State != "" {
+		db = db.Where("batch_state = ?", q.State)
+	}
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count conflict resolution batches: %w", err)
+	}
+	var items []model.ConflictResolutionBatch
+	if err := db.Order("created_at DESC, id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&items).Error; err != nil {
+		return nil, 0, fmt.Errorf("list conflict resolution batches: %w", err)
+	}
+	return items, total, nil
+}
+
+func (r *ConflictResolutionBatchRepository) ListItems(batchID uint) ([]model.ConflictResolutionBatchItem, error) {
+	var items []model.ConflictResolutionBatchItem
+	if err := r.db.Where("batch_id = ?", batchID).Order("conflict_id ASC").Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("list conflict resolution batch items: %w", err)
+	}
+	return items, nil
+}
+
+// UnfinishedCoverage returns items of other previewed (unfinished) batches
+// that cover any of the given conflicts.
+func (r *ConflictResolutionBatchRepository) UnfinishedCoverage(conflictIDs []uint, excludeBatchID uint) ([]model.ConflictResolutionBatchItem, error) {
+	if len(conflictIDs) == 0 {
+		return []model.ConflictResolutionBatchItem{}, nil
+	}
+	var items []model.ConflictResolutionBatchItem
+	err := r.db.Table("conflict_resolution_batch_items AS items").
+		Select("items.*").
+		Joins("JOIN conflict_resolution_batches batches ON batches.id = items.batch_id").
+		Where("batches.batch_state = ? AND batches.id <> ? AND items.conflict_id IN ?", constants.ConflictBatchPreviewed, excludeBatchID, conflictIDs).
+		Order("items.batch_id ASC, items.conflict_id ASC").
+		Find(&items).Error
+	if err != nil {
+		return nil, fmt.Errorf("find unfinished conflict batch coverage: %w", err)
+	}
+	return items, nil
+}
+
+func (r *ConflictResolutionBatchRepository) SetItemProposal(itemID, proposalID uint) error {
+	result := r.db.Model(&model.ConflictResolutionBatchItem{}).Where("id = ?", itemID).Update("proposal_id", proposalID)
+	if result.Error != nil {
+		return fmt.Errorf("set conflict batch item proposal: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("conflict batch item missing: %w", gorm.ErrInvalidTransaction)
+	}
+	return nil
+}
+
+// Complete moves a previewed batch to completed; the conditional update keeps
+// concurrent submitters from both finishing the same batch.
+func (r *ConflictResolutionBatchRepository) Complete(id uint, completedAt time.Time) error {
+	return r.finish(id, constants.ConflictBatchCompleted, "[]", completedAt)
+}
+
+// Fail moves a previewed batch to failed and stores the invalidation reasons.
+func (r *ConflictResolutionBatchRepository) Fail(id uint, reasonsJSON string, completedAt time.Time) error {
+	return r.finish(id, constants.ConflictBatchFailed, reasonsJSON, completedAt)
+}
+
+func (r *ConflictResolutionBatchRepository) finish(id uint, to, reasonsJSON string, completedAt time.Time) error {
+	result := r.db.Model(&model.ConflictResolutionBatch{}).
+		Where("id = ? AND batch_state = ?", id, constants.ConflictBatchPreviewed).
+		Updates(map[string]any{"batch_state": to, "failure_reasons": reasonsJSON, "completed_at": completedAt})
+	if result.Error != nil {
+		return fmt.Errorf("finish conflict resolution batch: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("conflict batch state changed: %w", gorm.ErrInvalidTransaction)
 	}
 	return nil
 }

@@ -24,7 +24,7 @@ func newCadastralTestService(t *testing.T) (*CadastralService, *repository.Store
 	if err != nil {
 		t.Fatalf("open SQLite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.AuditLog{}, &model.LandParcel{}, &model.SurveyObservation{}, &model.BoundaryProposal{}, &model.TopologyConflict{}, &model.TopologyDetectionRun{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.AuditLog{}, &model.LandParcel{}, &model.SurveyObservation{}, &model.BoundaryProposal{}, &model.TopologyConflict{}, &model.TopologyDetectionRun{}, &model.ConflictResolutionBatch{}, &model.ConflictResolutionBatchItem{}); err != nil {
 		t.Fatalf("migrate SQLite: %v", err)
 	}
 	store := repository.NewStore(db)

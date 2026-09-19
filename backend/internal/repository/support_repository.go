@@ -20,14 +20,15 @@ import (
 var ErrNotFound = errors.New("record not found")
 
 type Store struct {
-	DB            *gorm.DB
-	Users         *UserRepository
-	Audits        *AuditRepository
-	Parcels       *LandParcelRepository
-	Observations  *SurveyObservationRepository
-	Proposals     *BoundaryProposalRepository
-	Conflicts     *TopologyConflictRepository
-	DetectionRuns *TopologyDetectionRunRepository
+	DB              *gorm.DB
+	Users           *UserRepository
+	Audits          *AuditRepository
+	Parcels         *LandParcelRepository
+	Observations    *SurveyObservationRepository
+	Proposals       *BoundaryProposalRepository
+	Conflicts       *TopologyConflictRepository
+	DetectionRuns   *TopologyDetectionRunRepository
+	ConflictBatches *ConflictResolutionBatchRepository
 }
 
 func Open(cfg config.Config) (*gorm.DB, error) {
@@ -52,14 +53,15 @@ func Open(cfg config.Config) (*gorm.DB, error) {
 
 func NewStore(db *gorm.DB) *Store {
 	return &Store{
-		DB:            db,
-		Users:         &UserRepository{db},
-		Audits:        &AuditRepository{db},
-		Parcels:       &LandParcelRepository{db},
-		Observations:  &SurveyObservationRepository{db},
-		Proposals:     &BoundaryProposalRepository{db},
-		Conflicts:     &TopologyConflictRepository{db},
-		DetectionRuns: &TopologyDetectionRunRepository{db},
+		DB:              db,
+		Users:           &UserRepository{db},
+		Audits:          &AuditRepository{db},
+		Parcels:         &LandParcelRepository{db},
+		Observations:    &SurveyObservationRepository{db},
+		Proposals:       &BoundaryProposalRepository{db},
+		Conflicts:       &TopologyConflictRepository{db},
+		DetectionRuns:   &TopologyDetectionRunRepository{db},
+		ConflictBatches: &ConflictResolutionBatchRepository{db},
 	}
 }
 
@@ -79,7 +81,7 @@ func (s *Store) Ping(ctx context.Context) error {
 }
 
 func MigrateAndSeed(db *gorm.DB) error {
-	if err := db.AutoMigrate(&model.User{}, &model.AuditLog{}, &model.LandParcel{}, &model.SurveyObservation{}, &model.BoundaryProposal{}, &model.TopologyConflict{}, &model.TopologyDetectionRun{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.AuditLog{}, &model.LandParcel{}, &model.SurveyObservation{}, &model.BoundaryProposal{}, &model.TopologyConflict{}, &model.TopologyDetectionRun{}, &model.ConflictResolutionBatch{}, &model.ConflictResolutionBatchItem{}); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
 	// Existing installations may have been created before the cadastral RBAC roles

@@ -29,3 +29,11 @@ var conflictTransitions = map[string]map[string]bool{
 }
 
 func CanConflictTransition(from, to string) bool { return conflictTransitions[from][to] }
+
+// Conflict resolution batch lifecycle. A previewed batch is unfinished and
+// blocks overlapping batches; completed and failed are terminal states.
+const (
+	ConflictBatchPreviewed = "previewed"
+	ConflictBatchCompleted = "completed"
+	ConflictBatchFailed    = "failed"
+)

@@ -15,3 +15,12 @@ func registerTopologyConflictRoutes(api *gin.RouterGroup, deps Dependencies) {
 	conflicts.POST("/:id/transition", appmw.RBACMiddleware(constants.RoleReviewer, constants.RoleAdmin), h.TransitionConflict)
 	conflicts.POST("/:id/apply-suggestion", appmw.RBACMiddleware(constants.RoleReviewer, constants.RoleAdmin), h.ApplyConflictSuggestion)
 }
+
+func registerConflictBatchRoutes(api *gin.RouterGroup, deps Dependencies) {
+	h := deps.CadastralHandler
+	batches := api.Group("/conflicts/batches")
+	batches.GET("", h.ListConflictBatches)
+	batches.GET("/:id", h.GetConflictBatch)
+	batches.POST("/preview", appmw.RBACMiddleware(constants.RoleReviewer, constants.RoleAdmin), h.PreviewConflictBatch)
+	batches.POST("/:id/submit", appmw.RBACMiddleware(constants.RoleReviewer, constants.RoleAdmin), h.SubmitConflictBatch)
+}

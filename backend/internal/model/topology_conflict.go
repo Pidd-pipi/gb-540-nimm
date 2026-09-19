@@ -36,3 +36,29 @@ type TopologyDetectionRun struct {
 	ResultIDs      string    `gorm:"type:text;not null" json:"result_ids"`
 	CreatedAt      time.Time `json:"created_at"`
 }
+
+// ConflictResolutionBatch groups confirmed conflicts of one parcel so a
+// reviewer can dispose them atomically. A previewed batch is unfinished and
+// holds an exclusion over its conflicts; completed and failed are terminal.
+type ConflictResolutionBatch struct {
+	ID             uint       `gorm:"primaryKey" json:"id"`
+	ParcelID       uint       `gorm:"not null;index" json:"parcel_id"`
+	ActorID        uint       `gorm:"not null;uniqueIndex:idx_conflict_batch_actor_key" json:"actor_id"`
+	IdempotencyKey string     `gorm:"size:128;not null;uniqueIndex:idx_conflict_batch_actor_key" json:"idempotency_key"`
+	RequestHash    string     `gorm:"size:128;not null" json:"request_hash"`
+	BatchState     string     `gorm:"size:24;not null;index" json:"batch_state"`
+	FailureReasons string     `gorm:"type:text;not null;default:'[]'" json:"failure_reasons"`
+	CreatedAt      time.Time  `json:"created_at"`
+	CompletedAt    *time.Time `json:"completed_at"`
+}
+
+// ConflictResolutionBatchItem freezes one conflict's disposition inputs at
+// preview time: the participating parcel versions and the suggestion hash.
+type ConflictResolutionBatchItem struct {
+	ID                 uint   `gorm:"primaryKey" json:"id"`
+	BatchID            uint   `gorm:"not null;index" json:"batch_id"`
+	ConflictID         uint   `gorm:"not null;index" json:"conflict_id"`
+	ParcelVersionsJSON string `gorm:"type:text;not null" json:"parcel_versions_json"`
+	SuggestionHash     string `gorm:"size:128;not null" json:"suggestion_hash"`
+	ProposalID         *uint  `json:"proposal_id"`
+}
